@@ -49,6 +49,7 @@ resize();
 // ---------------------------------------------------------------- state
 
 let state = 'menu'; // menu | countdown | racing | finished
+let paused = false;
 let time = 0;
 let shake = 0;
 let camHeading = 0;
@@ -89,6 +90,9 @@ addEventListener('keydown', (e) => {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   if (e.repeat) return;
   sound.init();
+  if (e.code === 'Escape' || e.code === 'KeyP') return togglePause();
+  if (e.code === 'KeyT' && (inRace() || paused)) return startRace();
+  if (paused) return;
   keys.add(e.code);
   if (e.code === 'Enter' && (state === 'menu' || state === 'finished')) startRace();
   if (e.code === 'KeyM') {
@@ -98,7 +102,20 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyR' && state === 'racing') respawn();
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
-addEventListener('blur', () => keys.clear());
+addEventListener('blur', () => { keys.clear(); if (inRace()) setPaused(true); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && inRace()) setPaused(true); });
+
+const inRace = () => state === 'countdown' || state === 'racing';
+function setPaused(on) {
+  if (on === paused || (on && !inRace())) return;
+  paused = on;
+  $('pause').hidden = !on;
+  keys.clear();
+  for (const k of Object.keys(touch)) touch[k] = false;
+  if (on) sound.ctx?.suspend();
+  else { sound.ctx?.resume(); last = performance.now(); }
+}
+const togglePause = () => setPaused(!paused);
 
 if ('ontouchstart' in window || navigator.maxTouchPoints > 0) document.body.classList.add('touch');
 for (const [id, name] of [['tLeft', 'left'], ['tRight', 'right'], ['tBrake', 'brake'], ['tGas', 'gas']]) {
@@ -281,6 +298,8 @@ async function renderBoard(el) {
 
 function startRace() {
   sound.init();
+  paused = false;
+  $('pause').hidden = true;
   $('menu').hidden = true;
   $('results').hidden = true;
   hud.root.hidden = false;
@@ -473,6 +492,11 @@ let acc = 0;
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  if (paused) {
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+    return;
+  }
   time += dt;
 
   const inp = readInput();
@@ -504,6 +528,9 @@ function frame(now) {
 
 $('startBtn').addEventListener('click', startRace);
 $('againBtn').addEventListener('click', startRace);
+$('pauseBtn').addEventListener('click', () => setPaused(true));
+$('resumeBtn').addEventListener('click', () => setPaused(false));
+$('restartBtn').addEventListener('click', startRace);
 resetRace();
 refreshPlayer();
 renderBoard($('menuBoard'));

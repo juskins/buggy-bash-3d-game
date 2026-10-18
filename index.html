@@ -52,6 +52,12 @@
   #card span { font-size: 11px; opacity: .65; }
   #card button { border: 0; border-radius: 999px; padding: 6px 12px; background: var(--lime); color: var(--ink); font-weight: 800; cursor: pointer; font-size: 12px; }
 
+  #pauseBtn { position: absolute; top: 176px; right: 16px; width: 150px; border: 0; border-radius: 12px; padding: 8px 0; background: var(--panel);
+    color: var(--paper); font-weight: 800; font-size: 13px; letter-spacing: .1em; cursor: pointer; pointer-events: auto; backdrop-filter: blur(6px); }
+  #pauseBtn:hover { background: var(--ink); }
+  .btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 16px 0 6px; }
+  .big.alt { background: var(--paper); box-shadow: 0 5px 0 #b9b6a8; }
+  #pause h2 { margin: 0; font-size: clamp(44px, 9vw, 72px); font-style: italic; font-weight: 900; text-shadow: 0 4px 0 var(--ink); }
   #banner { position: absolute; top: 30%; left: 0; right: 0; text-align: center; font-size: clamp(56px, 12vw, 120px); font-weight: 900; font-style: italic;
     color: var(--paper); text-shadow: 0 6px 0 var(--ink), 0 0 30px rgba(0,0,0,.35); opacity: 0; }
   #banner.pop { animation: pop .9s ease-out forwards; }
@@ -99,6 +105,7 @@
     #lapPanel { min-width: 0; padding: 8px 10px; }
     #curTime { font-size: 26px; }
     #minimap { width: 104px; height: 104px; }
+    #pauseBtn { top: 130px; width: 104px; }
     .big { padding: 12px 26px; font-size: 17px; }
     .tag { margin: 8px 0 12px; font-size: 15px; }
     #speed { font-size: 40px; }
@@ -127,6 +134,7 @@
     <div id="nitro"><i></i></div>
     <div id="nitroLabel">BOOST</div>
   </div>
+  <button id="pauseBtn" type="button">PAUSE (P)</button>
   <div id="banner"></div>
   <div id="toast"></div>
 </div>
@@ -152,9 +160,22 @@
       <div><kbd>A</kbd><kbd>D</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd> Steer</div>
       <div><kbd>Space</kbd> Handbrake drift</div>
       <div><kbd>R</kbd> Back on track</div>
+      <div><kbd>P</kbd><kbd>Esc</kbd> Pause</div>
+      <div><kbd>T</kbd> Restart race</div>
       <div><kbd>M</kbd> Mute</div>
     </div>
     <div class="board panel" id="menuBoard"><h3>TOP RACERS</h3><p>Loading&hellip;</p></div>
+  </div>
+</div>
+
+<div id="pause" class="overlay" hidden>
+  <div class="sheet">
+    <h2>PAUSED</h2>
+    <div class="btns">
+      <button class="big" id="resumeBtn" type="button">RESUME</button>
+      <button class="big alt" id="restartBtn" type="button">RESTART</button>
+    </div>
+    <div class="hint"><kbd>Esc</kbd> / <kbd>P</kbd> resume &nbsp; <kbd>T</kbd> restart</div>
   </div>
 </div>
 
