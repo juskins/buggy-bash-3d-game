@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Buggy Bash 3D</title>
+<link rel="icon" href="data:,">
+<meta name="description" content="Bash your beach buggy around a tropical island track, grab glowing crates and chase the best lap.">
+<style>
+  :root {
+    --ink: #292a23;
+    --paper: #fffefa;
+    --lime: #d8fd71;
+    --hot: #ff6a1f;
+    --cyan: #25d9ff;
+    --panel: rgba(41, 42, 35, 0.78);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #8fd2f0; color: var(--paper);
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; -webkit-user-select: none; user-select: none; touch-action: none; }
+  canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  [hidden] { display: none !important; }
+
+  .panel { background: var(--panel); border-radius: 16px; backdrop-filter: blur(6px); padding: 10px 14px; }
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+
+  #lapPanel { position: absolute; top: 16px; left: 16px; min-width: 172px; }
+  .lapno { font-size: 13px; font-weight: 800; letter-spacing: .12em; color: var(--lime); }
+  .lapno b { font-size: 20px; color: var(--paper); }
+  #curTime { font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; margin: 2px 0 6px; }
+  .row { display: flex; justify-content: space-between; gap: 18px; font-size: 13px; opacity: .85; font-variant-numeric: tabular-nums; }
+  .row span { letter-spacing: .1em; opacity: .7; }
+  #pips { display: flex; gap: 5px; margin-top: 8px; }
+  #pips i { width: 14px; height: 14px; border-radius: 4px; background: rgba(255,255,255,.18); border: 2px solid rgba(255,255,255,.25); }
+  #pips i.got { background: var(--cyan); border-color: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+  #pips i.next { border-color: #ffc933; animation: blink .7s infinite alternate; }
+  @keyframes blink { to { background: rgba(255,201,51,.6); } }
+
+  #minimap { position: absolute; top: 16px; right: 16px; width: 150px; height: 150px; border-radius: 16px; background: var(--panel); }
+
+  #speedo { position: absolute; right: 16px; bottom: 16px; width: 210px; text-align: right; }
+  #speed { font-size: 56px; font-weight: 900; font-style: italic; line-height: 1; font-variant-numeric: tabular-nums; }
+  #speed small { font-size: 16px; font-style: normal; font-weight: 700; opacity: .7; margin-left: 4px; }
+  #nitro { margin-top: 8px; height: 10px; border-radius: 99px; background: rgba(255,255,255,.18); overflow: hidden; }
+  #nitro i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ff6a1f, #ffc933); border-radius: 99px; }
+  #nitroLabel { font-size: 11px; letter-spacing: .14em; font-weight: 800; opacity: .75; margin-top: 4px; }
+
+  #card { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px;
+    padding: 6px 14px 6px 6px; border-radius: 999px; background: var(--ink); pointer-events: auto; max-width: 46vw; }
+  #card img { width: 40px; height: 40px; border-radius: 50%; background: var(--lime); flex: none; }
+  #card b { display: block; font-size: 15px; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #card span { font-size: 11px; opacity: .65; }
+  #card button { border: 0; border-radius: 999px; padding: 6px 12px; background: var(--lime); color: var(--ink); font-weight: 800; cursor: pointer; font-size: 12px; }
+
+  #banner { position: absolute; top: 30%; left: 0; right: 0; text-align: center; font-size: clamp(56px, 12vw, 120px); font-weight: 900; font-style: italic;
+    color: var(--paper); text-shadow: 0 6px 0 var(--ink), 0 0 30px rgba(0,0,0,.35); opacity: 0; }
+  #banner.pop { animation: pop .9s ease-out forwards; }
+  @keyframes pop { 0% { transform: scale(1.7); opacity: 0; } 15% { transform: scale(1); opacity: 1; } 75% { opacity: 1; } 100% { transform: scale(.92); opacity: 0; } }
+  #toast { position: absolute; top: calc(30% + 130px); left: 0; right: 0; text-align: center; font-size: 22px; font-weight: 800; color: var(--lime);
+    text-shadow: 0 2px 0 var(--ink), 0 0 12px rgba(0,0,0,.4); opacity: 0; transition: opacity .25s; }
+  #toast.show { opacity: 1; }
+
+  .overlay { position: fixed; inset: 0; display: flex; align-items: flex-start; justify-content: center; padding: 16px; z-index: 5; overflow-y: auto;
+    background: radial-gradient(ellipse at center, rgba(20,24,18,.15), rgba(20,24,18,.62)); }
+  .sheet { width: min(560px, 100%); text-align: center; margin: auto; }
+  h1 { margin: 0; font-size: clamp(44px, 9vw, 84px); line-height: .92; font-weight: 900; font-style: italic; letter-spacing: -.02em;
+    text-shadow: 0 5px 0 var(--ink), 0 0 30px rgba(0,0,0,.4); }
+  h1 em { color: var(--lime); font-style: inherit; }
+  .tag { margin: 12px 0 18px; font-size: 17px; text-shadow: 0 1px 8px rgba(0,0,0,.5); }
+  .big { border: 0; border-radius: 999px; padding: 15px 34px; font-size: 20px; font-weight: 900; background: var(--lime); color: var(--ink); cursor: pointer;
+    box-shadow: 0 5px 0 #8fa83f; pointer-events: auto; }
+  .big:active { transform: translateY(3px); box-shadow: 0 2px 0 #8fa83f; }
+  .hint { margin-top: 10px; font-size: 13px; opacity: .85; }
+  .keys { display: grid; grid-template-columns: repeat(2, auto); gap: 6px 22px; justify-content: center; margin: 18px 0 4px; font-size: 14px; text-align: left; }
+  kbd { display: inline-block; min-width: 24px; padding: 2px 7px; margin-right: 4px; border-radius: 6px; background: var(--paper); color: var(--ink); font: 700 12px/1.5 system-ui; text-align: center; box-shadow: 0 2px 0 #b9b6a8; }
+  .board { margin-top: 18px; padding: 12px 16px; text-align: left; }
+  .board h3 { margin: 0 0 6px; font-size: 12px; letter-spacing: .14em; color: var(--lime); }
+  .board ol { margin: 0; padding: 0; list-style: none; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .board li { display: grid; grid-template-columns: 28px 1fr 64px 64px; gap: 6px; padding: 3px 0; }
+  .board li.head { opacity: .55; font-size: 11px; letter-spacing: .08em; }
+  .board li.me { color: var(--lime); font-weight: 800; }
+  .board li span:nth-child(3), .board li span:nth-child(4) { text-align: right; }
+  .board p { margin: 0; font-size: 13px; opacity: .7; }
+  #results h2 { margin: 0; font-size: clamp(40px, 8vw, 64px); font-style: italic; font-weight: 900; text-shadow: 0 4px 0 var(--ink); }
+  #finalTime { font-size: 44px; font-weight: 900; font-variant-numeric: tabular-nums; color: var(--lime); }
+  #lapList { margin: 8px auto 6px; display: inline-grid; grid-template-columns: auto auto; gap: 2px 28px; font-size: 15px; font-variant-numeric: tabular-nums; text-align: left; }
+  #lapList .best { color: var(--lime); font-weight: 800; }
+  #pbBadge { display: inline-block; margin: 6px 0; padding: 4px 12px; border-radius: 99px; background: var(--hot); font-weight: 900; font-size: 13px; letter-spacing: .08em; }
+
+  #touch { position: fixed; inset: auto 0 0 0; height: 40vh; pointer-events: none; display: none; z-index: 3; }
+  body.touch #touch { display: block; }
+  body.touch #speedo { bottom: auto; top: 180px; }
+  #touch button { position: absolute; bottom: 20px; width: 84px; height: 84px; border-radius: 50%; border: 3px solid rgba(255,255,255,.55);
+    background: rgba(41,42,35,.55); color: #fff; font-size: 30px; font-weight: 900; pointer-events: auto; touch-action: none; }
+  #touch button.on { background: rgba(216,253,113,.7); color: var(--ink); }
+  #tLeft { left: 16px; } #tRight { left: 116px; } #tBrake { right: 116px; } #tGas { right: 16px; width: 96px; height: 96px; }
+
+  @media (max-width: 700px) {
+    #lapPanel { min-width: 0; padding: 8px 10px; }
+    #curTime { font-size: 26px; }
+    #minimap { width: 104px; height: 104px; }
+    .big { padding: 12px 26px; font-size: 17px; }
+    .tag { margin: 8px 0 12px; font-size: 15px; }
+    #speed { font-size: 40px; }
+    #speedo { width: 150px; }
+    #card { max-width: 52vw; top: auto; bottom: 16px; left: 16px; transform: none; }
+    #card img { width: 32px; height: 32px; }
+    .keys { grid-template-columns: 1fr; }
+  }
+</style>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="hud" hidden>
+  <div id="lapPanel" class="panel">
+    <div class="lapno">LAP <b id="lapNum">1</b>/<span id="lapTotal">3</span></div>
+    <div id="curTime">0:00.00</div>
+    <div class="row"><span>LAST</span><b id="lastTime">--:--.--</b></div>
+    <div class="row"><span>BEST</span><b id="bestTime">--:--.--</b></div>
+    <div id="pips"></div>
+  </div>
+  <canvas id="minimap" width="300" height="300"></canvas>
+  <div id="speedo" class="panel">
+    <div id="speed">0<small>km/h</small></div>
+    <div id="nitro"><i></i></div>
+    <div id="nitroLabel">BOOST</div>
+  </div>
+  <div id="banner"></div>
+  <div id="toast"></div>
+</div>
+
+<div id="card" hidden>
+  <img id="playerFace" alt="">
+  <div>
+    <b id="playerName">Guest</b>
+    <span id="playerAccount">Not signed in</span>
+  </div>
+  <button id="signInBtn" type="button" hidden>Sign in</button>
+</div>
+
+<div id="menu" class="overlay">
+  <div class="sheet">
+    <h1>BUGGY<br><em>BASH</em> 3D</h1>
+    <p class="tag">Three laps round a tropical island. Grab the glowing crates for a boost &mdash; and mind the rocks.</p>
+    <button class="big" id="startBtn" type="button">START RACE</button>
+    <div class="hint">or press <kbd>Enter</kbd></div>
+    <div class="keys">
+      <div><kbd>W</kbd><kbd>&uarr;</kbd> Accelerate</div>
+      <div><kbd>S</kbd><kbd>&darr;</kbd> Brake / reverse</div>
+      <div><kbd>A</kbd><kbd>D</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd> Steer</div>
+      <div><kbd>Space</kbd> Handbrake drift</div>
+      <div><kbd>R</kbd> Back on track</div>
+      <div><kbd>M</kbd> Mute</div>
+    </div>
+    <div class="board panel" id="menuBoard"><h3>TOP RACERS</h3><p>Loading&hellip;</p></div>
+  </div>
+</div>
+
+<div id="results" class="overlay" hidden>
+  <div class="sheet">
+    <h2>FINISH!</h2>
+    <div id="finalTime">0:00.00</div>
+    <div id="pbBadge" hidden>NEW BEST LAP</div>
+    <div><div id="lapList"></div></div>
+    <div id="saveNote" class="hint"></div>
+    <div class="board panel" id="resultsBoard"><h3>TOP RACERS</h3><p>Loading&hellip;</p></div>
+    <p><button class="big" id="againBtn" type="button">RACE AGAIN</button></p>
+    <div class="hint">or press <kbd>Enter</kbd></div>
+  </div>
+</div>
+
+<div id="touch">
+  <button id="tLeft" type="button">&larr;</button>
+  <button id="tRight" type="button">&rarr;</button>
+  <button id="tBrake" type="button">&darr;</button>
+  <button id="tGas" type="button">GO</button>
+</div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
