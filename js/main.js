@@ -73,6 +73,8 @@ const countdown = { t: 0, step: -1 };
 const progress = { last: 0, unwrapped: 0, max: 0 };
 const race = { clock: 0, lapStart: 0, started: false, lapsDone: 0, laps: [] };
 
+let lastResult = null;
+
 // Best lap is kept per track and car.
 let bestEver = null;
 const bestKey = () => `bb3d_best_${pick.env}_${pick.car}`;
@@ -441,6 +443,7 @@ async function finishRace() {
   banner('FINISH!');
   const total = race.laps.reduce((a, b) => a + b, 0);
   const best = Math.min(...race.laps);
+  lastResult = { total, best };
   const pb = bestEver == null || best < bestEver;
   if (pb) {
     bestEver = best;
@@ -636,6 +639,12 @@ function frame(now) {
 
 $('startBtn').addEventListener('click', startRace);
 $('againBtn').addEventListener('click', startRace);
+$('shareBtn').addEventListener('click', () => {
+  if (!lastResult) return;
+  const text = `I raced the ${CARS[pick.car].name} round ${ENVIRONMENTS[pick.env].name} in Buggy Bash 3D: ${formatTime(lastResult.total)} (best lap ${formatTime(lastResult.best)}). Can you beat me?`;
+  const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent('https://start.ng/games/buggy-bash-3d')}`;
+  window.open(url, '_blank', 'noopener');
+});
 $('pauseBtn').addEventListener('click', () => setPaused(true));
 $('resumeBtn').addEventListener('click', () => setPaused(false));
 $('restartBtn').addEventListener('click', startRace);

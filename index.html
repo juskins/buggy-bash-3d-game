@@ -90,6 +90,8 @@
   .big { border: 0; border-radius: 999px; padding: 15px 34px; font-size: 20px; font-weight: 900; background: var(--lime); color: var(--ink); cursor: pointer;
     box-shadow: 0 5px 0 #8fa83f; pointer-events: auto; }
   .big:active { transform: translateY(3px); box-shadow: 0 2px 0 #8fa83f; }
+  .hint a { color: var(--lime); font-weight: 800; }
+  .hint.foot { margin: 14px 0 4px; }
   .hint { margin-top: 10px; font-size: 13px; opacity: .85; }
   .keys { display: grid; grid-template-columns: repeat(2, auto); gap: 6px 22px; justify-content: center; margin: 18px 0 4px; font-size: 14px; text-align: left; }
   kbd { display: inline-block; min-width: 24px; padding: 2px 7px; margin-right: 4px; border-radius: 6px; background: var(--paper); color: var(--ink); font: 700 12px/1.5 system-ui; text-align: center; box-shadow: 0 2px 0 #b9b6a8; }
@@ -192,6 +194,7 @@
       <div><kbd>M</kbd> Mute</div>
     </div>
     <div class="board panel" id="menuBoard"><h3>TOP RACERS</h3><p>Loading&hellip;</p></div>
+    <div class="hint foot">Play more games on <a href="https://start.ng">start.ng</a></div>
   </div>
 </div>
 
@@ -217,8 +220,10 @@
     <div class="board panel" id="resultsBoard"><h3>TOP RACERS</h3><p>Loading&hellip;</p></div>
     <div class="btns">
       <button class="big" id="againBtn" type="button">RACE AGAIN</button>
+      <button class="big alt" id="shareBtn" type="button">SHARE ON X</button>
       <button class="big alt" id="garageBtn" type="button">GARAGE</button>
     </div>
+    <div class="hint"><a href="https://start.ng">&larr; Back to start.ng</a></div>
     <div class="hint">or press <kbd>Enter</kbd></div>
   </div>
 </div>
