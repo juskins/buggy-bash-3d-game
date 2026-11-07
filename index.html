@@ -56,6 +56,20 @@
     color: var(--paper); font-weight: 800; font-size: 13px; letter-spacing: .1em; cursor: pointer; pointer-events: auto; backdrop-filter: blur(6px); }
   #pauseBtn:hover { background: var(--ink); }
   .btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 16px 0 6px; }
+  .garage { display: grid; gap: 8px; margin: 12px 0 16px; }
+  .pick { background: var(--panel); border-radius: 16px; padding: 8px 12px 10px; backdrop-filter: blur(6px); }
+  .pick h3 { margin: 0 0 6px; font-size: 11px; letter-spacing: .14em; color: var(--lime); }
+  .chips { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .chip { border: 2px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08); color: var(--paper); border-radius: 12px;
+    padding: 6px 11px; font: 800 13px system-ui; cursor: pointer; pointer-events: auto; }
+  .chip:hover { background: rgba(255,255,255,.18); }
+  .chip.on { background: var(--lime); border-color: var(--lime); color: var(--ink); }
+  .blurb { margin-top: 6px; font-size: 12px; opacity: .85; }
+  .stats { display: flex; gap: 14px; justify-content: center; margin-top: 6px; }
+  .stat { display: flex; align-items: center; gap: 6px; font-size: 11px; letter-spacing: .06em; opacity: .9; }
+  .stat i { width: 46px; height: 7px; border-radius: 9px; background: rgba(255,255,255,.2); overflow: hidden; }
+  .stat b { display: block; height: 100%; background: var(--lime); }
+  @media (max-height: 780px) { .keys, .tag { display: none; } h1 { font-size: clamp(36px, 7vh, 64px); } }
   .big.alt { background: var(--paper); box-shadow: 0 5px 0 #b9b6a8; }
   #pause h2 { margin: 0; font-size: clamp(44px, 9vw, 72px); font-style: italic; font-weight: 900; text-shadow: 0 4px 0 var(--ink); }
   #banner { position: absolute; top: 30%; left: 0; right: 0; text-align: center; font-size: clamp(56px, 12vw, 120px); font-weight: 900; font-style: italic;
@@ -152,8 +166,21 @@
   <div class="sheet">
     <h1>BUGGY<br><em>BASH</em> 3D</h1>
     <p class="tag">Three laps round a tropical island. Grab the glowing crates for a boost &mdash; and mind the rocks.</p>
+    <div class="garage">
+      <div class="pick">
+        <h3>TRACK</h3>
+        <div class="chips" id="envChips"></div>
+        <div class="blurb" id="envBlurb"></div>
+      </div>
+      <div class="pick">
+        <h3>CAR</h3>
+        <div class="chips" id="carChips"></div>
+        <div class="blurb" id="carBlurb"></div>
+        <div class="stats" id="carStats"></div>
+      </div>
+    </div>
     <button class="big" id="startBtn" type="button">START RACE</button>
-    <div class="hint">or press <kbd>Enter</kbd></div>
+    <div class="hint">or press <kbd>Enter</kbd> &nbsp; <kbd>&larr;</kbd><kbd>&rarr;</kbd> car &nbsp; <kbd>&uarr;</kbd><kbd>&darr;</kbd> track</div>
     <div class="keys">
       <div><kbd>W</kbd><kbd>&uarr;</kbd> Accelerate</div>
       <div><kbd>S</kbd><kbd>&darr;</kbd> Brake / reverse</div>
@@ -174,6 +201,7 @@
     <div class="btns">
       <button class="big" id="resumeBtn" type="button">RESUME</button>
       <button class="big alt" id="restartBtn" type="button">RESTART</button>
+      <button class="big alt" id="menuBtn" type="button">GARAGE</button>
     </div>
     <div class="hint"><kbd>Esc</kbd> / <kbd>P</kbd> resume &nbsp; <kbd>T</kbd> restart</div>
   </div>
@@ -187,7 +215,10 @@
     <div><div id="lapList"></div></div>
     <div id="saveNote" class="hint"></div>
     <div class="board panel" id="resultsBoard"><h3>TOP RACERS</h3><p>Loading&hellip;</p></div>
-    <p><button class="big" id="againBtn" type="button">RACE AGAIN</button></p>
+    <div class="btns">
+      <button class="big" id="againBtn" type="button">RACE AGAIN</button>
+      <button class="big alt" id="garageBtn" type="button">GARAGE</button>
+    </div>
     <div class="hint">or press <kbd>Enter</kbd></div>
   </div>
 </div>

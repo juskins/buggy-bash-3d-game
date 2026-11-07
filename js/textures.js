@@ -16,24 +16,32 @@ function toTexture(canvas, { repeat = true, srgb = true } = {}) {
   return t;
 }
 
-// Packed, darker beach sand with two faint tyre lanes. u runs across the track, v along it.
-export function trackTexture() {
+// Road surface. u runs across the track, v along it. Sand gets faint tyre lanes; asphalt gets painted lines.
+export function trackTexture({ base = '#c8a266', center = false, edges = false } = {}) {
   const [c, g] = makeCanvas(256, 256);
   const r = rng(7);
-  g.fillStyle = '#c8a266';
+  g.fillStyle = base;
   g.fillRect(0, 0, 256, 256);
   for (let i = 0; i < 5000; i++) {
-    const v = 150 + r() * 90;
-    g.fillStyle = `rgba(${v},${v * 0.82},${v * 0.55},${0.12 + r() * 0.25})`;
+    g.fillStyle = r() < 0.5 ? `rgba(255,255,255,${0.04 + r() * 0.1})` : `rgba(0,0,0,${0.06 + r() * 0.14})`;
     g.fillRect(r() * 256, r() * 256, 1 + r() * 2, 1 + r() * 2);
   }
   for (const x of [88, 168]) {
     const grad = g.createLinearGradient(x - 14, 0, x + 14, 0);
-    grad.addColorStop(0, 'rgba(120,88,50,0)');
-    grad.addColorStop(0.5, 'rgba(120,88,50,0.28)');
-    grad.addColorStop(1, 'rgba(120,88,50,0)');
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(0.5, 'rgba(0,0,0,0.2)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = grad;
     g.fillRect(x - 14, 0, 28, 256);
+  }
+  if (center) {
+    g.fillStyle = 'rgba(255,214,90,0.95)';
+    g.fillRect(125, 0, 6, 110);
+  }
+  if (edges) {
+    g.fillStyle = 'rgba(255,255,255,0.9)';
+    g.fillRect(8, 0, 5, 256);
+    g.fillRect(243, 0, 5, 256);
   }
   return toTexture(c);
 }
@@ -171,4 +179,41 @@ export function finishLineTexture() {
     }
   }
   return toTexture(c, { repeat: false });
+}
+
+// Sun / moon core.
+export function discTexture() {
+  const [c, g] = makeCanvas(128, 128);
+  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 60);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.85, 'rgba(255,255,255,1)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 128, 128);
+  return toTexture(c, { repeat: false });
+}
+
+// Tower-block windows: an 8x8 grid of cells. `map` is the daytime look, `glow` is which windows are lit.
+export function windowTextures() {
+  const SIZE = 256, CELLS = 8, cell = SIZE / CELLS;
+  const [mc, m] = makeCanvas(SIZE, SIZE);
+  const [gc, gl] = makeCanvas(SIZE, SIZE);
+  const r = rng(77);
+  m.fillStyle = '#ffffff';
+  m.fillRect(0, 0, SIZE, SIZE);
+  gl.fillStyle = '#000000';
+  gl.fillRect(0, 0, SIZE, SIZE);
+  const lit = ['#ffd98a', '#ffe9b8', '#9fe3ff', '#ffc27a'];
+  for (let y = 0; y < CELLS; y++) {
+    for (let x = 0; x < CELLS; x++) {
+      const on = r() < 0.55;
+      m.fillStyle = on ? '#c9d6e6' : '#26334a';
+      m.fillRect(x * cell + 6, y * cell + 7, cell - 12, cell - 14);
+      if (on) {
+        gl.fillStyle = lit[Math.floor(r() * lit.length)];
+        gl.fillRect(x * cell + 6, y * cell + 7, cell - 12, cell - 14);
+      }
+    }
+  }
+  return { map: toTexture(mc), glow: toTexture(gc) };
 }

@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { Track } from './track.js';
 import { buildWorld } from './world.js';
 import { Buggy, Vehicle } from './car.js';
+import { CARS, DEFAULT_CAR } from './cars.js';
+import { DEFAULT_ENV, ENVIRONMENTS } from './environments.js';
 import { Crates } from './crates.js';
 import { Particles } from './particles.js';
 import { Sound } from './audio.js';
@@ -12,7 +14,6 @@ const LAPS = 3;
 const BOOST_TIME = 2.4;
 const STEP = 1 / 120;
 const START_BACK = 16; // samples behind the line on the grid
-const SAND = 0xe3cf9e;
 
 const $ = (id) => document.getElementById(id);
 
@@ -30,10 +31,24 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, 1, 0.5, 2600);
 
 const track = new Track();
-const world = buildWorld(scene, track);
-const buggy = new Buggy();
+// What the player picked in the garage (remembered between visits).
+const pick = { env: DEFAULT_ENV, car: DEFAULT_CAR };
+try {
+  const e = localStorage.getItem('bb3d_env'), c = localStorage.getItem('bb3d_car');
+  if (ENVIRONMENTS[e]) pick.env = e;
+  if (CARS[c]) pick.car = c;
+} catch { /* storage unavailable */ }
+
+let world = buildWorld(scene, track, ENVIRONMENTS[pick.env]);
+renderer.toneMappingExposure = world.exposure;
+const buggy = new Buggy(pick.car);
 scene.add(buggy.root);
-const vehicle = new Vehicle();
+const vehicle = new Vehicle(CARS[pick.car].stats);
+// Headlights, only bright in the dark environments.
+const headlight = new THREE.SpotLight(0xfff2cf, world.headlight * 60, 90, 0.55, 0.6, 1.2);
+headlight.position.set(0, 1.1, 1.6);
+headlight.target.position.set(0, 0.2, 16);
+buggy.root.add(headlight, headlight.target);
 const crates = new Crates(scene, track);
 const particles = new Particles(scene);
 const sound = new Sound();
@@ -58,8 +73,14 @@ const countdown = { t: 0, step: -1 };
 const progress = { last: 0, unwrapped: 0, max: 0 };
 const race = { clock: 0, lapStart: 0, started: false, lapsDone: 0, laps: [] };
 
+// Best lap is kept per track and car.
 let bestEver = null;
-try { bestEver = parseFloat(localStorage.getItem('bb3d_best_lap')) || null; } catch { /* storage unavailable */ }
+const bestKey = () => `bb3d_best_${pick.env}_${pick.car}`;
+function loadBest() {
+  bestEver = null;
+  try { bestEver = parseFloat(localStorage.getItem(bestKey())) || null; } catch { /* storage unavailable */ }
+}
+loadBest();
 
 function placeOnTrack(index) {
   const p = track.pts[index];
@@ -94,7 +115,14 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyT' && (inRace() || paused)) return startRace();
   if (paused) return;
   keys.add(e.code);
-  if (e.code === 'Enter' && (state === 'menu' || state === 'finished')) startRace();
+  if (e.code === 'Enter' && (state === 'menu' || state === 'finished')) {
+    e.preventDefault(); // don't also press whichever button has focus
+    startRace();
+  }
+  if (state === 'menu') {
+    if (e.code === 'ArrowRight' || e.code === 'ArrowLeft') chooseCar(cycle(CARS, pick.car, e.code === 'ArrowRight' ? 1 : -1));
+    if (e.code === 'ArrowDown' || e.code === 'ArrowUp') chooseEnv(cycle(ENVIRONMENTS, pick.env, e.code === 'ArrowDown' ? 1 : -1));
+  }
   if (e.code === 'KeyM') {
     sound.setMuted(!sound.muted);
     toast(sound.muted ? 'Sound off' : 'Sound on');
@@ -102,6 +130,8 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyR' && state === 'racing') respawn();
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
+// Buttons shouldn't keep focus, or Space/Enter would press them again mid-race.
+document.addEventListener('click', (e) => e.target.closest?.('button')?.blur());
 addEventListener('blur', () => { keys.clear(); if (inRace()) setPaused(true); });
 document.addEventListener('visibilitychange', () => { if (document.hidden && inRace()) setPaused(true); });
 
@@ -294,6 +324,84 @@ async function renderBoard(el) {
   el.replaceChildren(heading, ol);
 }
 
+// ---------------------------------------------------------------- garage
+
+const garage = { env: $('envChips'), car: $('carChips') };
+
+function chip(parent, id, data, onPick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'chip';
+  b.dataset.id = id;
+  b.textContent = `${data.icon} ${data.name}`;
+  b.addEventListener('click', () => { sound.init(); onPick(id); });
+  parent.appendChild(b);
+}
+
+function updateGarage() {
+  for (const [kind, list] of [['env', ENVIRONMENTS], ['car', CARS]]) {
+    for (const b of garage[kind].children) b.classList.toggle('on', b.dataset.id === pick[kind]);
+    $(kind + 'Blurb').textContent = list[pick[kind]].blurb;
+  }
+  const r = CARS[pick.car].ratings;
+  $('carStats').replaceChildren(...[['Speed', r.speed], ['Accel', r.accel], ['Handling', r.handling]].map(([label, n]) => {
+    const row = document.createElement('div');
+    row.className = 'stat';
+    const name = document.createElement('span');
+    name.textContent = label;
+    const bar = document.createElement('i');
+    bar.appendChild(document.createElement('b')).style.width = `${n * 20}%`;
+    row.append(name, bar);
+    return row;
+  }));
+}
+
+function chooseEnv(id) {
+  if (!ENVIRONMENTS[id] || id === world.envId) return;
+  pick.env = id;
+  world.dispose();
+  world = buildWorld(scene, track, ENVIRONMENTS[id]);
+  world.envId = id;
+  renderer.toneMappingExposure = world.exposure;
+  headlight.intensity = world.headlight * 60;
+  try { localStorage.setItem('bb3d_env', id); } catch { /* storage unavailable */ }
+  loadBest();
+  updateGarage();
+}
+
+function chooseCar(id) {
+  if (!CARS[id] || id === pick.car) return;
+  pick.car = id;
+  buggy.build(id);
+  vehicle.setStats(CARS[id].stats);
+  try { localStorage.setItem('bb3d_car', id); } catch { /* storage unavailable */ }
+  loadBest();
+  updateGarage();
+}
+
+const cycle = (list, current, dir) => {
+  const ids = Object.keys(list);
+  return ids[(ids.indexOf(current) + dir + ids.length) % ids.length];
+};
+
+world.envId = pick.env;
+for (const [id, data] of Object.entries(ENVIRONMENTS)) chip(garage.env, id, data, chooseEnv);
+for (const [id, data] of Object.entries(CARS)) chip(garage.car, id, data, chooseCar);
+updateGarage();
+
+function goMenu() {
+  paused = false;
+  $('pause').hidden = true;
+  $('results').hidden = true;
+  hud.root.hidden = true;
+  $('menu').hidden = false;
+  state = 'menu';
+  resetRace();
+  sound.ctx?.resume();
+  last = performance.now();
+  renderBoard($('menuBoard'));
+}
+
 // ---------------------------------------------------------------- race flow
 
 function startRace() {
@@ -336,7 +444,7 @@ async function finishRace() {
   const pb = bestEver == null || best < bestEver;
   if (pb) {
     bestEver = best;
-    try { localStorage.setItem('bb3d_best_lap', String(best)); } catch { /* storage unavailable */ }
+    try { localStorage.setItem(bestKey(), String(best)); } catch { /* storage unavailable */ }
   }
   $('finalTime').textContent = formatTime(total);
   $('pbBadge').hidden = !pb;
@@ -419,7 +527,7 @@ function onHit(strength, px, pz) {
   buggy.kick(strength);
   const n = Math.min(14, Math.round(strength * 1.5));
   particles.burst(px, 0.8, pz, n, { speed: 6, up: 3, gravity: 12, size: 0.3, color: 0xffd24a, life: 0.5, alpha: 1 });
-  particles.burst(px, 0.6, pz, Math.ceil(n / 2), { speed: 3, up: 1.5, size: 1.8, grow: 1.5, color: SAND, life: 0.8, alpha: 0.5 });
+  particles.burst(px, 0.6, pz, Math.ceil(n / 2), { speed: 3, up: 1.5, size: 1.8, grow: 1.5, color: world.dust, life: 0.8, alpha: 0.5 });
   if (strength > 1.5) sound.bump(strength);
 }
 
@@ -432,18 +540,18 @@ function emitTrail(dt) {
     dustCarry += dt * (speed * 1.1 + Math.abs(side) * 4 + (vehicle.offTrack ? 30 : 0));
     while (dustCarry > 1) {
       dustCarry -= 1;
-      const lx = (Math.random() < 0.5 ? -1 : 1) * 1.1;
-      const lz = -1.15;
+      const lx = (Math.random() < 0.5 ? -1 : 1) * vehicle.stats.halfW * 1.1;
+      const lz = -vehicle.stats.halfL * 0.65;
       particles.emit(
         vehicle.x + lx * c + lz * s, 0.3, vehicle.z - lx * s + lz * c,
         -vehicle.vx * 0.1 + (Math.random() - 0.5), 0.8 + Math.random() * 1.2, -vehicle.vz * 0.1 + (Math.random() - 0.5),
-        { life: 0.7, size: 1.5, grow: 2, color: SAND, alpha: 0.4 },
+        { life: 0.7, size: 1.5, grow: 2, color: world.dust, alpha: 0.4 },
       );
     }
   }
   if (vehicle.boostT > 0) {
-    for (const lx of [-0.25, 0.25]) {
-      const lz = -2.3;
+    for (const lx of [-vehicle.stats.halfW * 0.26, vehicle.stats.halfW * 0.26]) {
+      const lz = -(vehicle.stats.halfL + 0.55);
       const hot = Math.random() < 0.5;
       particles.emit(
         vehicle.x + lx * c + lz * s, 0.95, vehicle.z - lx * s + lz * c,
@@ -531,6 +639,8 @@ $('againBtn').addEventListener('click', startRace);
 $('pauseBtn').addEventListener('click', () => setPaused(true));
 $('resumeBtn').addEventListener('click', () => setPaused(false));
 $('restartBtn').addEventListener('click', startRace);
+$('menuBtn').addEventListener('click', goMenu);
+$('garageBtn').addEventListener('click', goMenu);
 resetRace();
 refreshPlayer();
 renderBoard($('menuBoard'));

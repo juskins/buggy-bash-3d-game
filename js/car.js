@@ -4,35 +4,28 @@ import { clamp } from './util.js';
 
 // ---------------------------------------------------------------- physics
 
-const HALF_W = 0.95;
-const HALF_L = 1.75;
 const POINT_R = 0.25;
 const MASS = 1;
-const INERTIA = 1.8;
-const RESTITUTION = 0.35;
 const FRICTION = 0.22;
-
-const MAX_SPEED = 38;
-const BOOST_SPEED = 54;
-const ACCEL = 24;
-const BOOST_ACCEL = 34;
 const BRAKE = 42;
+const BOOST_ACCEL = 34;
 const REVERSE_MAX = 10;
 const REVERSE_ACCEL = 14;
-const YAW_RATE = 2.2;
-
-// Contact points on the chassis, [lateral, forward].
-const POINTS = [
-  [-HALF_W, -HALF_L], [HALF_W, -HALF_L], [-HALF_W, HALF_L], [HALF_W, HALF_L],
-  [-HALF_W, 0], [HALF_W, 0], [0, HALF_L], [0, -HALF_L],
-];
 
 // Heading h faces (sin h, cos h) on the x/z plane; positive yaw turns left.
 export class Vehicle {
-  constructor() {
+  constructor(stats) {
     this.near = {};
     this.probe = {};
+    this.setStats(stats);
     this.reset(0, 0, 0);
+  }
+
+  // Handling for the chosen car (see cars.js). Contact points sit on the chassis outline.
+  setStats(stats) {
+    this.stats = stats;
+    const w = stats.halfW, l = stats.halfL;
+    this.points = [[-w, -l], [w, -l], [-w, l], [w, l], [-w, 0], [w, 0], [0, l], [0, -l]];
   }
 
   reset(x, z, heading) {
@@ -62,11 +55,12 @@ export class Vehicle {
     this.boostT = Math.max(0, this.boostT - dt);
     const boosting = this.boostT > 0;
 
+    const st = this.stats;
     // Steering and yaw
     const target = clamp(input.steer, -1, 1);
     this.steer += (target - this.steer) * Math.min(1, dt * (target === 0 ? 10 : 6));
     const sf = Math.min(1, Math.abs(this.vf) / 5) * (this.vf < 0 ? -1 : 1);
-    const yawTarget = (this.steer * YAW_RATE * sf * (input.hand ? 1.35 : 1)) / (1 + Math.abs(this.vf) / 38);
+    const yawTarget = (this.steer * st.yaw * sf * (input.hand ? 1.35 : 1)) / (1 + Math.abs(this.vf) / 38);
     this.w += (yawTarget - this.w) * Math.min(1, dt * 7);
     this.heading += this.w * dt;
 
@@ -76,11 +70,11 @@ export class Vehicle {
     let vf = this.vx * fx + this.vz * fz;
     let vl = this.vx * rx + this.vz * rz;
     const vf0 = vf;
-    const max = boosting ? BOOST_SPEED : MAX_SPEED;
+    const max = boosting ? st.boostSpeed : st.maxSpeed;
 
     if (input.up) {
       if (vf < -0.5) vf += BRAKE * dt;
-      else vf += (ACCEL + (boosting ? BOOST_ACCEL : 0)) * Math.max(0, 1 - Math.max(vf, 0) / max) * dt;
+      else vf += (st.accel + (boosting ? BOOST_ACCEL : 0)) * Math.max(0, 1 - Math.max(vf, 0) / max) * dt;
     }
     if (input.down) {
       if (vf > 0.5) vf -= BRAKE * dt;
@@ -100,7 +94,7 @@ export class Vehicle {
     this.offTrack = Math.abs(lateral) > TRACK_HALF ? 1 : 0;
     if (this.offTrack) vf -= vf * 0.45 * dt;
 
-    vl *= Math.exp(-(input.hand ? 1.6 : 9) * dt);
+    vl *= Math.exp(-(input.hand ? st.grip * 0.18 : st.grip) * dt);
     this.vx = fx * vf + rx * vl;
     this.vz = fz * vf + rz * vl;
     this.x += this.vx * dt;
@@ -116,7 +110,7 @@ export class Vehicle {
   collide(track, colliders, onHit) {
     for (let iter = 0; iter < 3; iter++) {
       const s = Math.sin(this.heading), c = Math.cos(this.heading);
-      for (const [lx, lz] of POINTS) {
+      for (const [lx, lz] of this.points) {
         const px = this.x + lx * c + lz * s;
         const pz = this.z - lx * s + lz * c;
 
@@ -147,20 +141,20 @@ export class Vehicle {
     if (vn <= 0) return;
 
     const rn = rz * nx - rx * nz;
-    const j = (-(1 + RESTITUTION) * vn) / (1 / MASS + (rn * rn) / INERTIA);
+    const j = (-(1 + this.stats.restitution) * vn) / (1 / MASS + (rn * rn) / this.stats.inertia);
     this.vx += (j * nx) / MASS;
     this.vz += (j * nz) / MASS;
-    this.w += (j * rn) / INERTIA;
+    this.w += (j * rn) / this.stats.inertia;
 
     // Friction along the surface
     const tx = -nz, tz = nx;
     const vtx = this.vx + this.w * rz, vtz = this.vz - this.w * rx;
     const vt = vtx * tx + vtz * tz;
     const rt = rz * tx - rx * tz;
-    const jt = clamp(-vt / (1 / MASS + (rt * rt) / INERTIA), FRICTION * j, -FRICTION * j);
+    const jt = clamp(-vt / (1 / MASS + (rt * rt) / this.stats.inertia), FRICTION * j, -FRICTION * j);
     this.vx += (jt * tx) / MASS;
     this.vz += (jt * tz) / MASS;
-    this.w += (jt * rt) / INERTIA;
+    this.w += (jt * rt) / this.stats.inertia;
 
     onHit?.(-j, px, pz, nx, nz);
   }
@@ -342,117 +336,261 @@ function buildDriver(style) {
   return { group: g, head };
 }
 
+const lampMat = (color, emissive, k = 1.6) => new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: k });
+
+// Each builder fills `b` with the car body and returns what Buggy needs to finish it:
+// wheels [x, radius, width, z, steered], where the driver sits, an optional flag mount and how much it rolls/bounces.
+
+function buildBuggy(b, m) {
+  const paint = mat(0xff6a1f, { roughness: 0.4, metalness: 0.15 });
+  const cage = mat(0xf4f0e6, { roughness: 0.4, metalness: 0.3 });
+  b.add(box(1.5, 0.42, 3.0, paint, 0, 0.64, 0));
+  const hood = box(1.3, 0.26, 1.1, paint, 0, 0.84, 1.15);
+  hood.rotation.x = 0.14;
+  b.add(hood);
+  b.add(box(1.4, 0.3, 0.9, paint, 0, 0.86, -1.2));
+  b.add(box(1.3, 0.1, 3.3, m.dark, 0, 0.42, 0));
+  b.add(box(0.7, 0.14, 0.6, m.dark, 0, 0.82, -0.2));
+  b.add(box(0.7, 0.62, 0.12, m.dark, 0, 1.12, -0.55));
+  const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.025, 6, 14), m.dark);
+  wheel.position.set(0, 1.28, 0.4);
+  wheel.rotation.x = 1.0;
+  b.add(wheel);
+  b.add(bar([0, 1.05, 0.3], [0, 1.28, 0.4], m.dark, 0.03));
+  for (const x of [-1, 1]) {
+    const px = x * 0.72;
+    b.add(bar([px, 0.85, 0.55], [px, 2.15, 0.2], cage));
+    b.add(bar([px, 0.85, -0.75], [px, 2.15, -0.75], cage));
+    b.add(bar([px, 2.15, 0.2], [px, 2.15, -0.75], cage));
+    b.add(bar([px, 2.15, -0.75], [x * 0.7, 0.9, -1.55], cage));
+    b.add(bar([x * 0.8, 0.55, 1.72], [x * 0.8, 0.9, 1.55], m.chrome, 0.05));
+    b.add(bar([x * 0.8, 0.55, -1.72], [x * 0.8, 0.8, -1.55], m.chrome, 0.05));
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.6, 8), m.chrome);
+    pipe.rotation.x = Math.PI / 2;
+    pipe.position.set(x * 0.25, 0.85, -1.95);
+    b.add(pipe);
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), lampMat(0xfff6c8, 0xffe58a));
+    lamp.position.set(x * 0.5, 0.88, 1.62);
+    b.add(lamp);
+  }
+  b.add(bar([-0.72, 2.15, 0.2], [0.72, 2.15, 0.2], cage));
+  b.add(bar([-0.72, 2.15, -0.75], [0.72, 2.15, -0.75], cage));
+  b.add(bar([-0.8, 0.55, 1.72], [0.8, 0.55, 1.72], m.chrome, 0.05));
+  b.add(bar([-0.8, 0.55, -1.72], [0.8, 0.55, -1.72], m.chrome, 0.05));
+  b.add(box(0.9, 0.5, 0.8, m.dark, 0, 1.12, -1.3));
+  const board = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), mat(0xff7ab0, { roughness: 0.3 }));
+  board.scale.set(0.3, 0.05, 1.45);
+  board.position.set(0.25, 2.25, -0.3);
+  board.rotation.y = 0.04;
+  b.add(board);
+  const stripe = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), mat(0xffffff, { roughness: 0.3 }));
+  stripe.scale.set(0.08, 0.055, 1.46);
+  stripe.position.copy(board.position);
+  stripe.rotation.y = 0.04;
+  b.add(stripe);
+  b.add(bar([-0.6, 0.9, -1.5], [-0.6, 3.1, -1.5], m.chrome, 0.015));
+  return {
+    wheels: [[-1.05, 0.5, 0.45, 1.2, true], [1.05, 0.5, 0.45, 1.2, true], [-1.1, 0.62, 0.62, -1.15, false], [1.1, 0.62, 0.62, -1.15, false]],
+    driver: { y: 0.9, z: -0.2, s: 1 }, flag: [-0.6, 2.9, -1.5], roll: 1, bounce: 1,
+  };
+}
+
+function buildSprinter(b, m) {
+  const paint = mat(0xd9262e, { roughness: 0.28, metalness: 0.45 });
+  const white = mat(0xffffff, { roughness: 0.3 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.4, roughness: 0.1 });
+  b.add(box(1.7, 0.45, 3.6, paint, 0, 0.55, 0));
+  const nose = box(1.5, 0.28, 1.3, paint, 0, 0.7, 1.35);
+  nose.rotation.x = 0.1;
+  b.add(nose);
+  b.add(box(1.6, 0.34, 1.1, paint, 0, 0.82, -1.3));
+  b.add(box(1.5, 0.08, 3.4, m.dark, 0, 0.3, 0));
+  b.add(box(1.2, 0.06, 1.2, m.dark, 0, 0.8, 0));
+  b.add(box(0.7, 0.55, 0.1, m.dark, 0, 1.05, -0.65));
+  const ws = box(1.3, 0.5, 0.05, glass, 0, 1.1, 0.62);
+  ws.rotation.x = -0.55;
+  b.add(ws);
+  const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.025, 6, 14), m.dark);
+  wheel.position.set(0, 1.0, 0.3);
+  wheel.rotation.x = 1.0;
+  b.add(wheel);
+  b.add(box(0.28, 0.02, 1.3, white, 0, 0.86, 1.35));
+  b.add(box(0.28, 0.02, 1.1, white, 0, 1.0, -1.3));
+  for (const x of [-1, 1]) {
+    b.add(bar([x * 0.6, 1.0, -1.6], [x * 0.6, 1.4, -1.78], m.dark, 0.04));
+    b.add(box(0.05, 0.3, 0.5, paint, x * 0.92, 1.38, -1.8));
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), lampMat(0xfff6c8, 0xffe58a));
+    lamp.position.set(x * 0.55, 0.72, 1.98);
+    b.add(lamp);
+    b.add(box(0.3, 0.1, 0.05, lampMat(0xff3030, 0xff2020, 1.2), x * 0.5, 0.92, -1.86));
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.35, 8), m.chrome);
+    pipe.rotation.x = Math.PI / 2;
+    pipe.position.set(x * 0.4, 0.5, -1.85);
+    b.add(pipe);
+    b.add(box(0.08, 0.16, 0.6, m.dark, x * 0.86, 0.6, 0.2));
+  }
+  b.add(box(1.8, 0.06, 0.5, m.dark, 0, 1.42, -1.8));
+  return {
+    wheels: [[-1.0, 0.42, 0.32, 1.25, true], [1.0, 0.42, 0.32, 1.25, true], [-1.03, 0.45, 0.38, -1.2, false], [1.03, 0.45, 0.38, -1.2, false]],
+    driver: { y: 0.62, z: -0.15, s: 0.88 }, flag: null, roll: 1, bounce: 0.7,
+  };
+}
+
+function buildTruck(b, m) {
+  const paint = mat(0x2fa64a, { roughness: 0.35, metalness: 0.3 });
+  const cage = mat(0xf4f0e6, { roughness: 0.4, metalness: 0.3 });
+  b.add(box(1.8, 0.3, 3.5, m.dark, 0, 1.15, 0));
+  b.add(box(1.9, 0.6, 1.3, paint, 0, 1.75, 1.15));
+  b.add(box(1.9, 0.5, 1.2, paint, 0, 1.65, -1.3));
+  b.add(box(1.8, 0.12, 1.4, m.dark, 0, 1.4, -0.1));
+  b.add(box(0.7, 0.15, 0.6, m.dark, 0, 1.55, -0.15));
+  b.add(box(0.7, 0.6, 0.12, m.dark, 0, 1.85, -0.5));
+  const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.025, 6, 14), m.dark);
+  wheel.position.set(0, 2.05, 0.3);
+  wheel.rotation.x = 1.0;
+  b.add(wheel);
+  for (const x of [-1, 1]) {
+    const px = x * 0.85;
+    b.add(bar([px, 1.45, 0.5], [px, 3.2, 0.15], cage, 0.06));
+    b.add(bar([px, 1.45, -0.8], [px, 3.2, -0.8], cage, 0.06));
+    b.add(bar([px, 3.2, 0.15], [px, 3.2, -0.8], cage, 0.06));
+    for (const z of [0.2, -0.45]) b.add(box(0.2, 0.2, 0.2, lampMat(0xfff2b0, 0xffd24a, 1.8), x * 0.45, 3.45, z));
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), lampMat(0xfff6c8, 0xffe58a));
+    lamp.position.set(x * 0.65, 1.8, 1.82);
+    b.add(lamp);
+    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.4, 8), m.chrome);
+    stack.position.set(x * 0.98, 2.35, -0.95);
+    b.add(stack);
+  }
+  b.add(bar([-0.85, 3.2, 0.15], [0.85, 3.2, 0.15], cage, 0.06));
+  b.add(bar([-0.85, 3.2, -0.8], [0.85, 3.2, -0.8], cage, 0.06));
+  b.add(box(1.8, 0.2, 0.2, m.dark, 0, 3.35, 0.2));
+  b.add(box(2.1, 0.28, 0.25, m.chrome, 0, 1.3, 1.9));
+  b.add(box(2.1, 0.28, 0.25, m.chrome, 0, 1.3, -1.9));
+  b.add(bar([-1.35, 0.95, 1.2], [1.35, 0.95, 1.2], m.dark, 0.1));
+  b.add(bar([-1.35, 0.95, -1.15], [1.35, 0.95, -1.15], m.dark, 0.1));
+  return {
+    wheels: [[-1.35, 0.95, 0.8, 1.2, true], [1.35, 0.95, 0.8, 1.2, true], [-1.35, 0.95, 0.8, -1.15, false], [1.35, 0.95, 0.8, -1.15, false]],
+    driver: { y: 1.52, z: -0.15, s: 1 }, flag: null, roll: 1.6, bounce: 2,
+  };
+}
+
+function buildKart(b, m) {
+  const paint = mat(0xffc933, { roughness: 0.35 });
+  b.add(box(1.0, 0.14, 2.1, paint, 0, 0.28, 0));
+  b.add(box(0.6, 0.2, 0.8, paint, 0, 0.42, 0.95));
+  for (const x of [-1, 1]) {
+    b.add(box(0.28, 0.28, 1.1, paint, x * 0.55, 0.42, 0));
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), lampMat(0xfff6c8, 0xffe58a));
+    lamp.position.set(x * 0.22, 0.5, 1.37);
+    b.add(lamp);
+  }
+  b.add(bar([-0.55, 0.3, 1.32], [0.55, 0.3, 1.32], m.chrome, 0.05));
+  b.add(box(0.55, 0.1, 0.5, m.dark, 0, 0.4, -0.4));
+  b.add(box(0.55, 0.45, 0.1, m.dark, 0, 0.7, -0.66));
+  b.add(box(0.5, 0.35, 0.4, m.dark, 0, 0.5, -1.0));
+  const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.022, 6, 12), m.dark);
+  wheel.position.set(0, 0.8, 0.4);
+  wheel.rotation.x = 1.1;
+  b.add(wheel);
+  b.add(bar([0, 0.45, 0.7], [0, 0.78, 0.4], m.dark, 0.025));
+  const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.35, 8), m.chrome);
+  pipe.rotation.x = Math.PI / 2;
+  pipe.position.set(0.18, 0.4, -1.3);
+  b.add(pipe);
+  b.add(bar([-0.4, 0.5, -1.05], [-0.4, 2.0, -1.05], m.chrome, 0.012));
+  return {
+    wheels: [[-0.78, 0.32, 0.28, 0.85, true], [0.78, 0.32, 0.28, 0.85, true], [-0.82, 0.36, 0.4, -0.85, false], [0.82, 0.36, 0.4, -0.85, false]],
+    driver: { y: 0.4, z: -0.1, s: 0.82 }, flag: [-0.4, 1.95, -1.05], roll: 0.6, bounce: 0.7,
+  };
+}
+
+const BUILDERS = { buggy: buildBuggy, sprinter: buildSprinter, truck: buildTruck, kart: buildKart };
+
 export class Buggy {
-  constructor() {
+  constructor(type = 'buggy') {
     this.root = new THREE.Group();
+    this.pitch = 0;
+    this.bounce = 0;
+    this.style = DEFAULT_STYLE;
+    this.driver = null;
+    this.build(type);
+  }
+
+  // (Re)builds the model for one of the cars in cars.js.
+  build(type) {
+    if (this.body) {
+      this.root.remove(this.body);
+      for (const w of this.wheels) this.root.remove(w.pivot);
+      for (const o of [this.body, ...this.wheels.map((w) => w.pivot)]) {
+        o.traverse((n) => {
+          n.geometry?.dispose();
+          for (const mm of [].concat(n.material ?? [])) mm.dispose();
+        });
+      }
+    }
+    this.type = type;
     this.body = new THREE.Group();
     this.root.add(this.body);
     this.wheels = [];
-    this.pitch = 0;
-    this.bounce = 0;
+    const shared = {
+      dark: mat(0x23272b, { roughness: 0.8 }),
+      chrome: mat(0xcfd6dc, { metalness: 0.85, roughness: 0.25 }),
+    };
+    const spec = BUILDERS[type](this.body, shared);
+    this.spec = spec;
 
-    const paint = mat(0xff6a1f, { roughness: 0.4, metalness: 0.15 });
-    const dark = mat(0x23272b, { roughness: 0.8 });
-    const cage = mat(0xf4f0e6, { roughness: 0.4, metalness: 0.3 });
-    const chrome = mat(0xcfd6dc, { metalness: 0.85, roughness: 0.25 });
-    const b = this.body;
-
-    b.add(box(1.5, 0.42, 3.0, paint, 0, 0.64, 0));
-    const hood = box(1.3, 0.26, 1.1, paint, 0, 0.84, 1.15);
-    hood.rotation.x = 0.14;
-    b.add(hood);
-    b.add(box(1.4, 0.3, 0.9, paint, 0, 0.86, -1.2));
-    b.add(box(1.3, 0.1, 3.3, dark, 0, 0.42, 0));
-    b.add(box(0.7, 0.14, 0.6, dark, 0, 0.82, -0.2));
-    b.add(box(0.7, 0.62, 0.12, dark, 0, 1.12, -0.55));
-    const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.025, 6, 14), dark);
-    wheel.position.set(0, 1.28, 0.4);
-    wheel.rotation.x = 1.0;
-    b.add(wheel);
-    b.add(bar([0, 1.05, 0.3], [0, 1.28, 0.4], dark, 0.03));
-
-    for (const x of [-1, 1]) {
-      const px = x * 0.72;
-      b.add(bar([px, 0.85, 0.55], [px, 2.15, 0.2], cage));
-      b.add(bar([px, 0.85, -0.75], [px, 2.15, -0.75], cage));
-      b.add(bar([px, 2.15, 0.2], [px, 2.15, -0.75], cage));
-      b.add(bar([px, 2.15, -0.75], [x * 0.7, 0.9, -1.55], cage));
-      b.add(bar([x * 0.8, 0.55, 1.72], [x * 0.8, 0.9, 1.55], chrome, 0.05));
-      b.add(bar([x * 0.8, 0.55, -1.72], [x * 0.8, 0.8, -1.55], chrome, 0.05));
-      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.6, 8), chrome);
-      pipe.rotation.x = Math.PI / 2;
-      pipe.position.set(x * 0.25, 0.85, -1.95);
-      b.add(pipe);
-      const lamp = new THREE.Mesh(
-        new THREE.SphereGeometry(0.14, 10, 8),
-        new THREE.MeshStandardMaterial({ color: 0xfff6c8, emissive: 0xffe58a, emissiveIntensity: 1.6 }),
-      );
-      lamp.position.set(x * 0.5, 0.88, 1.62);
-      b.add(lamp);
-    }
-    b.add(bar([-0.72, 2.15, 0.2], [0.72, 2.15, 0.2], cage));
-    b.add(bar([-0.72, 2.15, -0.75], [0.72, 2.15, -0.75], cage));
-    b.add(bar([-0.8, 0.55, 1.72], [0.8, 0.55, 1.72], chrome, 0.05));
-    b.add(bar([-0.8, 0.55, -1.72], [0.8, 0.55, -1.72], chrome, 0.05));
-    b.add(box(0.9, 0.5, 0.8, dark, 0, 1.12, -1.3));
-
-    const board = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), mat(0xff7ab0, { roughness: 0.3 }));
-    board.scale.set(0.3, 0.05, 1.45);
-    board.position.set(0.25, 2.25, -0.3);
-    board.rotation.y = 0.04;
-    b.add(board);
-    const stripe = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), mat(0xffffff, { roughness: 0.3 }));
-    stripe.scale.set(0.08, 0.055, 1.46);
-    stripe.position.copy(board.position);
-    stripe.rotation.y = 0.04;
-    b.add(stripe);
-
-    b.add(bar([-0.6, 0.9, -1.5], [-0.6, 3.1, -1.5], chrome, 0.015));
-    this.flag = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.7, 0.4),
-      new THREE.MeshStandardMaterial({ color: 0x1fe0d0, emissive: 0x0b8f86, side: THREE.DoubleSide }),
-    );
-    this.flag.geometry.translate(0.35, 0, 0);
-    this.flag.position.set(-0.6, 2.9, -1.5);
-    b.add(this.flag);
-
-    // Wheels: [x, radius, width, z, steered]
     const tire = mat(0x1b1b1b, { roughness: 1 });
     const hub = mat(0xd9dde0, { metalness: 0.7, roughness: 0.3 });
-    for (const [x, r, w, z, steered] of [
-      [-1.05, 0.5, 0.45, 1.2, true], [1.05, 0.5, 0.45, 1.2, true],
-      [-1.1, 0.62, 0.62, -1.15, false], [1.1, 0.62, 0.62, -1.15, false],
-    ]) {
+    for (const [x, r, w, z, steered] of spec.wheels) {
       const pivot = new THREE.Group();
       pivot.position.set(x, r, z);
       const spin = new THREE.Group();
-      const t = new THREE.Mesh(new THREE.CylinderGeometry(r, r, w, 14), tire);
+      const t = new THREE.Mesh(new THREE.CylinderGeometry(r, r, w, r > 0.8 ? 18 : 14), tire);
       t.rotation.z = Math.PI / 2;
       const h = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.55, r * 0.55, w + 0.03, 10), hub);
       h.rotation.z = Math.PI / 2;
-      const lug = box(0.1, r * 1.9, w * 0.5, dark);
-      spin.add(t, h, lug);
+      spin.add(t, h);
+      const lugs = r > 0.8 ? 3 : 1;
+      for (let i = 0; i < lugs; i++) {
+        const lug = box(0.1, r * 1.9, w * 0.5, shared.dark);
+        lug.rotation.x = (i * Math.PI) / lugs;
+        spin.add(lug);
+      }
       pivot.add(spin);
       this.root.add(pivot);
       this.wheels.push({ pivot, spin, r, steered });
     }
 
-    b.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-    this.wheels.forEach((w) => w.pivot.traverse((o) => { if (o.isMesh) o.castShadow = true; }));
+    this.flag = null;
+    if (spec.flag) {
+      this.flag = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.7, 0.4),
+        new THREE.MeshStandardMaterial({ color: 0x1fe0d0, emissive: 0x0b8f86, side: THREE.DoubleSide }),
+      );
+      this.flag.geometry.translate(0.35, 0, 0);
+      this.flag.position.set(...spec.flag);
+      this.body.add(this.flag);
+    }
 
+    this.body.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    this.wheels.forEach((w) => w.pivot.traverse((o) => { if (o.isMesh) o.castShadow = true; }));
     this.driver = null;
-    this.setDriver(DEFAULT_STYLE);
+    this.setDriver(this.style);
   }
 
   setDriver(style) {
+    this.style = style ?? DEFAULT_STYLE;
     if (this.driver) {
       this.body.remove(this.driver.group);
       this.driver.group.traverse((o) => {
         if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); }
       });
     }
-    this.driver = buildDriver(style ?? DEFAULT_STYLE);
-    this.driver.group.position.set(0, 0.9, -0.2);
+    this.driver = buildDriver(this.style);
+    const d = this.spec.driver;
+    this.driver.group.position.set(0, d.y, d.z);
+    this.driver.group.scale.setScalar(d.s);
     this.body.add(this.driver.group);
   }
 
@@ -462,22 +600,23 @@ export class Buggy {
 
   // Sync the model with the physics state.
   update(v, dt, time) {
+    const { roll: rollK, bounce: bounceK } = this.spec;
     this.root.position.set(v.x, 0, v.z);
     this.root.rotation.y = v.heading;
 
-    const roll = clamp(v.w * v.vf * 0.014, -0.16, 0.16);
+    const roll = clamp(v.w * v.vf * 0.014 * rollK, -0.16 * rollK, 0.16 * rollK);
     const pitchTarget = clamp(v.accel * 0.006, -0.08, 0.12) * -1 + (v.accel < -20 ? 0.05 : 0);
     this.pitch += (pitchTarget - this.pitch) * Math.min(1, dt * 8);
     this.bounce *= Math.exp(-dt * 7);
-    const chatter = Math.min(1, Math.abs(v.vf) / 20) * 0.012 * Math.sin(time * 38);
+    const chatter = Math.min(1, Math.abs(v.vf) / 20) * 0.012 * bounceK * Math.sin(time * 38);
     this.body.rotation.set(this.pitch, 0, roll);
-    this.body.position.y = this.bounce * Math.abs(Math.sin(time * 18)) + chatter + (v.offTrack ? 0.015 * Math.sin(time * 55) : 0);
+    this.body.position.y = this.bounce * bounceK * Math.abs(Math.sin(time * 18)) + chatter + (v.offTrack ? 0.015 * Math.sin(time * 55) : 0);
 
     for (const w of this.wheels) {
       w.spin.rotation.x += (v.vf * dt) / w.r;
       if (w.steered) w.pivot.rotation.y = v.steer * 0.5;
     }
     this.driver.head.rotation.y = v.steer * 0.45;
-    this.flag.rotation.y = 0.5 + Math.sin(time * 14) * 0.25 - Math.min(1, Math.abs(v.vf) / 40) * 0.5;
+    if (this.flag) this.flag.rotation.y = 0.5 + Math.sin(time * 14) * 0.25 - Math.min(1, Math.abs(v.vf) / 40) * 0.5;
   }
 }
