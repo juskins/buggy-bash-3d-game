@@ -70,6 +70,7 @@
   .stat i { width: 46px; height: 7px; border-radius: 9px; background: rgba(255,255,255,.2); overflow: hidden; }
   .stat b { display: block; height: 100%; background: var(--lime); }
   @media (max-height: 780px) { .keys, .tag { display: none; } h1 { font-size: clamp(36px, 7vh, 64px); } }
+  a.big { display: inline-block; text-decoration: none; }
   .big.alt { background: var(--paper); box-shadow: 0 5px 0 #b9b6a8; }
   #pause h2 { margin: 0; font-size: clamp(44px, 9vw, 72px); font-style: italic; font-weight: 900; text-shadow: 0 4px 0 var(--ink); }
   #banner { position: absolute; top: 30%; left: 0; right: 0; text-align: center; font-size: clamp(56px, 12vw, 120px); font-weight: 900; font-style: italic;
@@ -220,7 +221,7 @@
     <div class="board panel" id="resultsBoard"><h3>TOP RACERS</h3><p>Loading&hellip;</p></div>
     <div class="btns">
       <button class="big" id="againBtn" type="button">RACE AGAIN</button>
-      <button class="big alt" id="shareBtn" type="button">SHARE ON X</button>
+      <a class="big alt" id="shareBtn" href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fstart.ng%2Fgames%2Fbuggy-bash-3d" target="_blank" rel="noopener">SHARE ON X</a>
       <button class="big alt" id="garageBtn" type="button">GARAGE</button>
     </div>
     <div class="hint"><a href="https://start.ng">&larr; Back to start.ng</a></div>
